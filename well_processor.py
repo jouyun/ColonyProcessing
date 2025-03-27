@@ -319,7 +319,7 @@ class WellProcessor:
     It handles the loading, registration, masking, and generation of intensity
     plots (kymographs) for TRITC and YFP channels.
     """
-    def __init__(self, well, path, time_clip=2):
+    def __init__(self, well, path, time_clip=2, magnification=4.0):
         """
         Initialize the processor with a given well ID and file path.
 
@@ -361,6 +361,7 @@ class WellProcessor:
         self.x = None
         self.y = None
         self.r = None
+        self.magnification = magnification
 
         # Directories
         self.montage_dir = None
@@ -534,7 +535,7 @@ class WellProcessor:
             os.path.join(self.cleared_dir, f'{self.well}_TRITC.avi'),
             fps=5,
             color='red',
-            magnification=1.25
+            magnification=self.magnification
         )
 
         save_channel_avi_with_timestamp(
@@ -542,7 +543,7 @@ class WellProcessor:
             os.path.join(self.cleared_dir, f'{self.well}_YFP.avi'),
             fps=5,
             color='green',
-            magnification= 1.25
+            magnification= self.magnification
         )
 
         save_channel_avi_with_timestamp(
@@ -550,7 +551,7 @@ class WellProcessor:
             os.path.join(self.cleared_dir, f'{self.well}_ratio.avi'),
             fps=5,
             color='blue',
-            magnification= 1.25
+            magnification= self.magnification
         )
 
 
