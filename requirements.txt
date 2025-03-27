@@ -1,0 +1,12 @@
+numpy
+pandas
+scikit-image
+opencv-python
+Pillow
+matplotlib
+seaborn
+scipy
+pystackreg
+dask
+PyQt5
+napari

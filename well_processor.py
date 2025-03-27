@@ -127,7 +127,7 @@ def straighten_image(image, path_points, width=50, napari_order=True, num_points
     vectors = np.stack([path_spline[0:-1,::-1], tangents[:,::-1]*100.0], axis=1)
     return straightened
 
-def process_color_channel(idf, type):
+def process_color_channel(idf, type, resolution=7.88955):
     df = idf.copy()
     if type == 'YFP':
         color_scheme = 'viridis'
@@ -151,8 +151,9 @@ def process_color_channel(idf, type):
         raise Exception("'Y' column is not numeric.")
     
     #print(df['x'].max())
+    #7.0632 / magnification
     df_long = df.melt(id_vars=['Y'], var_name='X', value_name='Z')
-    df_long['X'] = df_long['X'] * 0.00788955 - 0.00788955
+    df_long['X'] = df_long['X'] * 0.001*resolution - 0.001*resolution
     
     max_x = df_long['X'].max()
     #df_long = df_long[df_long['X'] <= 0.75 * max_x]
@@ -175,8 +176,10 @@ def process_color_channel(idf, type):
     ax.set_xlabel("Radius (mm)", fontsize=30)
     ax.set_ylabel("Time (h)", fontsize=30)
 
-    xrng = (np.arange(0,4,1))
-    ax.set_xticks((xrng * 1/0.00788955).astype(int))
+    #xrng = (np.arange(0,4,1))
+    max_rng = np.floor(max_x).astype(int) + 1
+    xrng = (np.arange(0,max_rng,1))
+    ax.set_xticks((xrng * 1/(0.001*resolution)).astype(int))
     ax.set_xticklabels(xrng)
     ax.tick_params(axis='x', labelsize=20)
 
@@ -362,6 +365,7 @@ class WellProcessor:
         self.y = None
         self.r = None
         self.magnification = magnification
+        self.resolution = 7.0632 / magnification # in microns per pixel
 
         # Directories
         self.montage_dir = None
@@ -513,8 +517,8 @@ class WellProcessor:
             out_path,
             combined.astype(np.single),
             imagej=True,
+            resolution = (1.0/self.resolution/.001, 1.0/self.resolution/.001),
             metadata={
-                'spacing': 0.00788955,
                 'unit': 'mm',
                 'axes': 'TCYX',
                 'mode': 'composite',
@@ -564,8 +568,8 @@ class WellProcessor:
             out_path,
             combined.astype(np.single),
             imagej=True,
+            resolution = (1.0/self.resolution/.001, 1.0/self.resolution/.001),
             metadata={
-                'spacing': 0.00788955,
                 'unit': 'mm',
                 'axes': 'TCYX',
                 'mode': 'composite',
@@ -693,8 +697,8 @@ class WellProcessor:
             )
 
             # Insert distance column
-            tritc_tdf.insert(0, 'x', 7.88955 * np.arange(tritc_tdf.shape[0]))
-            yfp_tdf.insert(0, 'x', 7.88955 * np.arange(yfp_tdf.shape[0]))
+            tritc_tdf.insert(0, 'x', self.resolution * np.arange(tritc_tdf.shape[0]))
+            yfp_tdf.insert(0, 'x', self.resolution * np.arange(yfp_tdf.shape[0]))
 
             # Adjust DataFrame indices
             tritc_tdf.index = tritc_tdf.index + 1
@@ -777,8 +781,8 @@ class WellProcessor:
             out_path,
             projections.astype(np.single),
             imagej=True,
+            resolution = (1.0/self.resolution/.001, 1.0/self.resolution/.001),
             metadata={
-                'spacing': 0.00788955,
                 'unit': 'mm',
                 'axes': 'TCYX',
                 'mode': 'composite',
@@ -795,8 +799,8 @@ class WellProcessor:
             out_tail,
             back_half.astype(np.single),
             imagej=True,
+            resolution = (1.0/self.resolution/.001, 1.0/self.resolution/.001),
             metadata={
-                'spacing': 0.00788955,
                 'unit': 'mm',
                 'axes': 'CYX',
                 'mode': 'composite',
@@ -860,9 +864,9 @@ class WellProcessor:
             ratio_tdf.to_csv(ratio_out, index=False)
 
             # Montages
-            yfp_img   = process_color_channel(yfp_tdf, 'YFP')
-            tritc_img = process_color_channel(tritc_tdf, 'TRITC')
-            ratio_img = process_color_channel(ratio_tdf, 'Ratio')
+            yfp_img   = process_color_channel(yfp_tdf, 'YFP', resolution=self.resolution)
+            tritc_img = process_color_channel(tritc_tdf, 'TRITC', resolution=self.resolution)
+            ratio_img = process_color_channel(ratio_tdf, 'Ratio', resolution=self.resolution)
             montage   = create_montage([tritc_img, yfp_img, ratio_img], 1, 3)
             montage.save(os.path.join(self.montage_dir, f'{self.well}_{idx}.png'))
 
