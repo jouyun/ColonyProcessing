@@ -133,14 +133,26 @@ def process_color_channel(idf, type, resolution=7.88955):
     df = idf.copy()
     if type == 'YFP':
         color_scheme = 'viridis'
-        min_z, max_z = 0, 45000
+        min_z, max_z = 0, 45000 #adjust as needed
     elif type == 'TRITC':
         color_scheme = 'Reds_r'
-        min_z, max_z = 0, 45000
-    else:
+        min_z, max_z = 0, 45000 #adjust as needed
+    elif type == 'Ratio':
         color_scheme = 'rocket'
-        min_z, max_z = 0.0, 1
+        min_z, max_z = 0.0, 1 #adjust as needed
         df.iloc[:, 1:] = np.log10(df.iloc[:, 1:] + 1)
+
+    elif type == 'YFP_Deriv':
+        color_scheme = 'viridis'
+        min_z, max_z = 0, 45000 #adjust as needed
+    elif type == 'TRITC_Deriv':
+        color_scheme = 'Reds_r'
+        min_z, max_z = 0, 45000 #adjust as needed
+    elif type == 'Ratio_Deriv':
+        color_scheme = 'rocket'
+        min_z, max_z = -1, 1 #adjust as needed
+    else:
+        raise ValueError(f"Unrecognized channel type: {type}")
     
     df = df.transpose().reset_index()
     df.columns = ['Y'] + list(df.columns[1:])
@@ -160,7 +172,7 @@ def process_color_channel(idf, type, resolution=7.88955):
     max_x = df_long['X'].max()
     #df_long = df_long[df_long['X'] <= 0.75 * max_x]
     
-    time_interval = 1  # hours per frame
+    time_interval = 1.16667  # hours per frame
     df_long['Time_hr'] = df_long['Y'] * time_interval
 
     pivoted = df_long.pivot(index="Time_hr", columns="X", values="Z")
@@ -258,27 +270,71 @@ def merge_montages(dir_path):
 
 # Assuming these helpers exist:
 # from your_module import process_color_channel, create_montage, straighten_image
+def merge_derivative_montages(dir_path):
+    """
+    Merge derivative kymograph PNGs (e.g., B4_DerivMontage_0.png) into a labeled All_DerivMontages.png.
+    """
+    montage_paths = glob.glob(os.path.join(dir_path, '*_DerivMontage_*.png'))
+    montage_paths.sort()
+    img_list = []
+    for path in montage_paths:
+        filename = os.path.basename(path).replace('.png', '')
+        parts = filename.split('_')  # e.g., ['B4', 'DerivMontage', '0']
+        if len(parts) < 3:
+            continue
+        well, angle = parts[0], parts[-1]
+
+        img = Image.open(path)
+        draw = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.truetype("arial", 50)
+        except:
+            font = ImageFont.load_default()
+        draw.text((10, 10), f"{well}_Δ_Angle{angle}", fill='black', font=font)
+        img_list.append(img)
+
+    if img_list:
+        montage = create_montage(img_list, math.ceil(len(img_list) / 5), 5)
+        montage.save(os.path.join(dir_path, 'All_DerivMontages.png'))
+        print("Saved All_DerivMontages.png")
+    else:
+        print("No derivative montages found to merge.")
 
 def add_colored_scale_bar(bgr, color='red', width=40, height_ratio=0.3,
-                          min_val=0, max_val=45000, label=True):
+                          min_val=0, max_val=45000, label=True, channel_type=None):
     """
     Adds a vertical intensity scale bar in the same color as the image channel.
+    If channel_type is provided (e.g., 'TRITC_Deriv'), and min_val/max_val are default,
+    it overrides them with appropriate values for derivative data.
     """
+    # Optional overrides for derivative kymographs
+    if channel_type == 'TRITC_Deriv' and min_val == 0 and max_val == 45000:
+        color = 'red'
+        min_val = -10000
+        max_val = 10000
+    elif channel_type == 'YFP_Deriv' and min_val == 0 and max_val == 45000:
+        color = 'green'
+        min_val = -10000
+        max_val = 10000
+    elif channel_type == 'Ratio_Deriv' and min_val == 0 and max_val == 45000:
+        color = 'blue'
+        min_val = -1.0
+        max_val = 1.0
+
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 1.5
     thickness = 2
     max_label = str(int(max_val))
-    (label_width, _) = cv2.getTextSize("45000", font, font_scale, thickness)[0]
+    (label_width, _) = cv2.getTextSize(max_label, font, font_scale, thickness)[0]
 
     H, W, _ = bgr.shape
     bar_height = int(H * height_ratio)
     bar_top = int((H - bar_height) / 2)
     bar_left = W - label_width
-    # Create vertical gradient (top = max, bottom = min)
+
     gradient = np.linspace(255, 0, bar_height).astype(np.uint8).reshape(-1, 1)
     bar = np.repeat(gradient, width, axis=1)
 
-    # Convert to BGR with appropriate channel coloring
     bar_bgr = np.zeros((bar_height, width, 3), dtype=np.uint8)
     if color == 'red':
         bar_bgr[..., 2] = bar
@@ -286,27 +342,12 @@ def add_colored_scale_bar(bgr, color='red', width=40, height_ratio=0.3,
         bar_bgr[..., 1] = bar
     elif color == 'blue':
         bar_bgr[..., 0] = bar
-    # elif color == 'cyan':
-    #     bar_bgr[..., 0] = bar  # blue
-    #     bar_bgr[..., 1] = bar  # green
-    # elif color == 'magenta':
-    #     bar_bgr[..., 0] = bar  # blue
-    #     bar_bgr[..., 2] = bar  # red
-    # elif color == 'yellow':
-    #     bar_bgr[..., 1] = bar  # green
-    #     bar_bgr[..., 2] = bar  # red
     else:
-        # fallback to white grayscale
         bar_bgr[...] = bar[:, :, None]
 
-    # Place scale bar in the image
     bgr[bar_top:bar_top + bar_height, bar_left:bar_left + width] = bar_bgr
 
-    # Add min/max labels (optional)
     if label:
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 1.5
-        thickness = 2
         color_text = (255, 255, 255)
         cv2.putText(bgr, f'{int(max_val)}', (bar_left - 40, bar_top - 10),
                     font, font_scale, color_text, thickness, cv2.LINE_AA)
@@ -314,6 +355,68 @@ def add_colored_scale_bar(bgr, color='red', width=40, height_ratio=0.3,
                     font, font_scale, color_text, thickness, cv2.LINE_AA)
 
     return bgr
+
+def make_derivative_kymograph_montages_from_csv(well, csv_dir, output_dir, resolution=7.0632 / 1.25):
+    """
+    Creates 1×3 TIFF montages for each angle using TRITC_Deriv, YFP_Deriv, and Ratio_Deriv CSVs.
+    """
+    channel_names = ['TRITC_Deriv', 'YFP_Deriv', 'Ratio_Deriv']
+    for idx in range(4):  # Four angles
+        images = []
+
+        for ch in channel_names:
+            path = os.path.join(csv_dir, f"{well}_{ch}_{idx}.csv")
+            if not os.path.exists(path):
+                print(f"Missing: {path}")
+                continue
+            df = pd.read_csv(path)
+            df_long = df.melt(id_vars=['x'], var_name='Y', value_name='Z')
+            df_long['Y'] = pd.to_numeric(df_long['Y'], errors='coerce')
+            df_long['Time_hr'] = df_long['Y']
+            pivoted = df_long.pivot(index="Time_hr", columns="x", values="Z")
+            mask = pivoted.isna() | (pivoted == 0)
+
+            if ch == 'TRITC_Deriv':
+                cmap = plt.get_cmap('Reds_r').copy()
+                vmin, vmax = -10000, 10000
+            elif ch == 'YFP_Deriv':
+                cmap = plt.get_cmap('viridis').copy()
+                vmin, vmax = -10000, 10000
+            elif ch == 'Ratio_Deriv':
+                cmap = plt.get_cmap('seismic').copy()
+                vmin, vmax = -1.0, 1.0
+            else:
+                cmap = plt.get_cmap('gray').copy()
+                vmin, vmax = None, None
+
+            cmap.set_bad(color='gray')
+
+            fig = sns.heatmap(pivoted, cmap=cmap, mask=mask, center=0, vmin=vmin, vmax=vmax, cbar=True)
+
+            ax = fig
+            ax.invert_yaxis()
+            ax.set_title(ch.replace("_Deriv", ""), fontsize=20)
+            ax.axis('off')
+
+            fig = ax.get_figure()
+            fig.canvas.draw()
+            w, h = fig.canvas.get_width_height()
+            buf = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8).reshape(h, w, 4)
+            images.append(Image.fromarray(buf[..., :3]))
+            plt.close(fig)
+        if len(images) == 3:
+            montage = create_montage(images, 1, 3)
+            draw = ImageDraw.Draw(montage)
+            try:
+                font = ImageFont.truetype("arial", 50)
+            except:
+                font = ImageFont.load_default()
+
+            draw.text((10, 10), f"{well}_Angle{idx}", font=font, fill='black')
+            out_path = os.path.join(output_dir, f"{well}_DerivMontage_{idx}.png")
+            montage.save(out_path)
+            print(f"✅ Saved: {out_path}")
+
 
 def save_channel_avi_with_timestamp(image_stack, output_path, fps=5, color='gray', magnification=1.25):
             """

@@ -65,6 +65,7 @@ class WellProcessor:
         self.tritc_cleared = None
         self.yfp_cleared = None
         self.output_img = None
+        self.derivative_stack = None
 
         # Kymographs
         self.tritc_kymographs = []
@@ -74,6 +75,16 @@ class WellProcessor:
         self.tritc_tdfs = []
         self.yfp_tdfs = []
         self.ratio_tdfs = []
+
+        # Derivative kymographs
+        self.tritc_deriv_kymographs = []
+        self.yfp_deriv_kymographs = []
+        self.ratio_deriv_kymographs = []
+
+        # Derivative DataFrames (CSV outputs)
+        self.tritc_deriv_tdfs = []
+        self.yfp_deriv_tdfs = []
+        self.ratio_deriv_tdfs = []
 
         # Geometric parameters of the region
         self.x = None
@@ -88,6 +99,10 @@ class WellProcessor:
         self.projection_dir = None
         self.segmentation_dir = None
         self.cleared_dir = None
+        self.derivative_dir = None
+        self.derivative_csv_dir = None    
+        self.derivative_kymograph_dir = None    
+
 
     def crop_and_subtract_background(self, img):
         """
@@ -299,19 +314,19 @@ class WellProcessor:
         # Make 'derivative' images
         combined = np.stack([self.tritc_cleared, self.yfp_cleared, self.yfp_cleared/self.tritc_cleared], axis=1)
         combined = np.nan_to_num(combined, nan=0.0, posinf=0.0, neginf=0.0)
-        combined = np.diff(combined, axis=0)
-        out_path = os.path.join(self.cleared_dir, f'{self.well}_derivative.tif')
+        self.derivative_stack= np.diff(combined, axis=0)
+        out_path = os.path.join(self.derivative_dir, f'{self.well}_derivative.tif')
         io.imsave(
             out_path,
-            combined.astype(np.single),
+            self.derivative_stack.astype(np.single),
             imagej=True,
             resolution = (1.0/self.resolution/.001, 1.0/self.resolution/.001),
             metadata={
                 'unit': 'mm',
                 'axes': 'TCYX',
                 'mode': 'composite',
-                'min': float(np.min(combined)),
-                'max': float(np.max(combined))
+                'min': float(np.min(self.derivative_stack)),
+                'max': float(np.max(self.derivative_stack))
             }
         )
 
@@ -472,18 +487,138 @@ class WellProcessor:
             ratio_tdf.iloc[:, 1:] = yfp_tdf.iloc[:, 1:] / tritc_tdf.iloc[:, 1:]
             self.ratio_tdfs.append(ratio_tdf)
 
+    
+    def get_derivative_kymographs(self, display=False, viewer=None):
+        """
+        Generate kymographs from the derivative stack (ΔTRITC, ΔYFP, ΔRatio) using same angles as primary channels.
+        """
+        if not hasattr(self, 'derivative_stack') or self.derivative_stack is None:
+            print("Derivative stack not found. Run get_masks() first.")
+            return
+
+        angles = [-45, 65, 90, -10]
+        channel_names = ['TRITC_Deriv', 'YFP_Deriv', 'Ratio_Deriv']
+        self.tritc_deriv_kymographs = []
+        self.yfp_deriv_kymographs = []
+        self.ratio_deriv_kymographs = []
+        self.tritc_deriv_tdfs = []
+        self.yfp_deriv_tdfs = []
+        self.ratio_deriv_tdfs = []
+
+        for idx, angle_ in enumerate(angles):
+            pt0 = [self.y, self.x]
+            pt00 = [
+            self.y + (self.r / 2) * math.sin(math.radians(angle_)),
+            self.x + (self.r / 2) * math.cos(math.radians(angle_))
+            ]
+            pt1 = [
+            self.y + self.r * math.sin(math.radians(angle_)),
+            self.x + self.r * math.cos(math.radians(angle_))
+            ]
+            
+            yfp_kymo = np.array([
+                straighten_image(slice_, np.array([pt0, pt00, pt1]), 
+                                 num_points=int(self.r), width=27)
+                for slice_ in self.derivative_stack[:, 1]
+            ]).mean(axis=1)
+
+            tritc_kymo = np.array([
+                straighten_image(slice_, np.array([pt0, pt00, pt1]), 
+                                 num_points=int(self.r), width=27)
+                for slice_ in self.derivative_stack[:, 0]
+            ]).mean(axis=1)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                ratio_kymo = np.true_divide(yfp_kymo, tritc_kymo)
+                ratio_kymo = np.nan_to_num(ratio_kymo, nan=0.0, posinf=0.0, neginf=0.0)
+
+            self.tritc_deriv_kymographs.append(tritc_kymo)
+            self.yfp_deriv_kymographs.append(yfp_kymo)
+            self.ratio_deriv_kymographs.append(ratio_kymo)
+            
+
+        # Build and save DataFrames per angle per channel for derivative kymographs
+        for kymo, ch, store in zip(
+            [tritc_kymo, yfp_kymo, ratio_kymo],
+            channel_names,
+            [self.tritc_deriv_tdfs, self.yfp_deriv_tdfs, self.ratio_deriv_tdfs]
+        ):
+            df = pd.DataFrame(data=kymo.T, columns=6 + np.arange(kymo.shape[0]))
+            df.insert(0, 'x', self.resolution * np.arange(df.shape[0]))
+            df.index = df.index + 1
+            store.append(df)
+
+            # Save CSV
+            csv_out = os.path.join(self.derivative_csv_dir, f'{self.well}_{ch}_{idx}.csv')
+            df.to_csv(csv_out, index=False)
+
+            # Save heatmap
+            plt.figure(figsize=(10, 8))
+            if ch == 'TRITC_Deriv':
+                cmap = 'Reds_r'; vmin, vmax = -10000, 10000
+            elif ch == 'YFP_Deriv':
+                cmap = 'viridis'; vmin, vmax = -10000, 10000
+            else:
+                cmap = 'seismic'; vmin, vmax = -1, 1
+
+            sns.heatmap(kymo, cmap=cmap, center=0, vmin=vmin, vmax=vmax, cbar=True)
+            plt.title(f'{ch.replace("_Deriv", "")} Δ - angle {angle_}°')
+            plt.xlabel('Radius (px)')
+            plt.ylabel('Time (frame)')
+            plt.tight_layout()
+
+            img_out = os.path.join(self.derivative_kymograph_dir, f'{self.well}_{ch}_{idx}.png')
+            plt.savefig(img_out)
+            plt.close()
+
+    # Optional viewer overlay
+        if display and viewer is not None:
+            lines = []
+            for angle_ in angles:
+                pt0 = [self.y, self.x]
+                pt1 = [
+                    self.y + self.r * math.sin(math.radians(angle_)),
+                    self.x + self.r * math.cos(math.radians(angle_))
+                ]
+                lines.append([pt0, pt1])
+            viewer.add_shapes(data=lines, shape_type='line',
+                          edge_color='cyan', face_color='cyan',
+                          edge_width=2)
+
+
+    def get_derivative_ratio_df(self):
+        """
+        Create ratio DataFrames (ΔYFP / ΔTRITC) for each pair of derivative DataFrames.
+        """
+        self.ratio_deriv_tdfs = []
+        for tritc_tdf, yfp_tdf in zip(self.tritc_deriv_tdfs, self.yfp_deriv_tdfs):
+            ratio_tdf = tritc_tdf.copy()
+            with np.errstate(divide='ignore', invalid='ignore'):
+                ratio_values = yfp_tdf.iloc[:, 1:] / tritc_tdf.iloc[:, 1:]
+                ratio_values = ratio_values.replace([np.inf, -np.inf], np.nan).fillna(0)
+        ratio_tdf.iloc[:, 1:] = ratio_values
+        self.ratio_deriv_tdfs.append(ratio_tdf)
+
     def setup_directories(self):
         """
-        Create/check directories for montages, csvs, projections, and segmentations.
-        
+        Create/check directories for montages, csvs, projections, segmentations,
+        cleared image stacks, and derivative kymograph outputs.
+
         Returns
         -------
         list
-            A list of the created directory paths in the order
-            [montage_dir, csv_dir, projection_dir, segmentation_dir].
+        A list of the created directory paths in the order:
+        [montage_dir, csv_dir, projection_dir, segmentation_dir, cleared_dir, derivative_dir, derivative_csv_dir, derivative_kymograph_dir]
         """
+
         parent_dir = os.path.join(self.path, '../')
-        directories = ["montages", "csvs", "projections", "segmentations", "cleared"]
+        directories = ["montages", 
+                       "csvs", 
+                       "projections", 
+                       "segmentations", 
+                       "cleared", 
+                       "derivatives", 
+                       "derivative_csvs", 
+                       "derivative_kymographs"]
         dir_paths = []
 
         for directory in directories:
@@ -556,7 +691,10 @@ class WellProcessor:
          self.csv_dir,
          self.projection_dir,
          self.segmentation_dir,
-         self.cleared_dir) = self.setup_directories()
+         self.cleared_dir,
+         self.derivative_dir,
+         self.derivative_csv_dir,
+         self.derivative_kymograph_dir) = self.setup_directories()
 
         # Load and register images
         self.get_well_images()
@@ -581,6 +719,30 @@ class WellProcessor:
         self.get_kymographs(display=False, viewer=None)
         print('get_kymographs done')
 
+        # Derivative kymographs
+        self.get_derivative_kymographs()
+        print('get_derivative_kymographs done')
+     
+        # Create montages for derivative kymographs
+        channel_names = ['TRITC_Deriv', 'YFP_Deriv', 'Ratio_Deriv']
+        angles = [-45, 65, 90, -10]
+
+        for idx in range(len(angles)):
+            image_paths = []
+            for c in range(3):
+                img_path = os.path.join(
+                    self.derivative_kymograph_dir,
+                    f'{self.well}_{channel_names[c]}_{idx}.png'
+                )
+                if os.path.exists(img_path):
+                    image_paths.append(Image.open(img_path))
+
+            if image_paths:
+                montage = create_montage(image_paths, 1, 3)
+                montage.save(os.path.join(
+                    self.derivative_kymograph_dir,
+                    f'{self.well}_DerivativeMontage_{idx}.png'
+                ))
         # Compute ratio DataFrames
         self.get_ratio_df()
         print('get_ratio_df done')
@@ -606,7 +768,19 @@ class WellProcessor:
             ratio_img = process_color_channel(ratio_tdf, 'Ratio', resolution=self.resolution)
             montage   = create_montage([tritc_img, yfp_img, ratio_img], 1, 3)
             montage.save(os.path.join(self.montage_dir, f'{self.well}_{idx}.png'))
+        # Create and save derivative montages from saved derivative DataFrames
+        for idx, (tritc_df, yfp_df, ratio_df) in enumerate(
+            zip(self.tritc_deriv_tdfs, self.yfp_deriv_tdfs, self.ratio_deriv_tdfs)
+        ):
+            tritc_img = process_color_channel(tritc_df, 'TRITC_Deriv', resolution=self.resolution)
+            yfp_img   = process_color_channel(yfp_df, 'YFP_Deriv', resolution=self.resolution)
+            ratio_img = process_color_channel(ratio_df, 'Ratio_Deriv', resolution=self.resolution)
 
+            montage = create_montage([tritc_img, yfp_img, ratio_img], 1, 3)
+            montage.save(os.path.join(
+                self.derivative_kymograph_dir,
+                f'{self.well}_DerivMontage_{idx}.png'
+            ))
         # Save segmentation overlay
         seg_out = os.path.join(self.segmentation_dir, f'{self.well}.tif')
         io.imsave(seg_out, self.output_img)
