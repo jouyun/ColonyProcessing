@@ -23,6 +23,7 @@ import os
 import dask
 
 from skimage import io, filters, measure, transform, exposure
+from skimage.transform import resize
 from scipy import ndimage as ndi
 from pystackreg import StackReg
 from PIL import Image, ImageDraw, ImageFont
@@ -131,13 +132,13 @@ def process_color_channel(idf, type, resolution=7.88955):
     df = idf.copy()
     if type == 'YFP':
         color_scheme = 'viridis'
-        min_z, max_z = 0, 55000
+        min_z, max_z = 0, 45000
     elif type == 'TRITC':
-        color_scheme = 'turbo'
-        min_z, max_z = 0, 25000
+        color_scheme = 'Reds_r'
+        min_z, max_z = 0, 45000
     else:
         color_scheme = 'rocket'
-        min_z, max_z = 0.0, 1.25
+        min_z, max_z = 0.0, 1
         df.iloc[:, 1:] = np.log10(df.iloc[:, 1:] + 1)
     
     df = df.transpose().reset_index()
@@ -151,24 +152,30 @@ def process_color_channel(idf, type, resolution=7.88955):
         raise Exception("'Y' column is not numeric.")
     
     #print(df['x'].max())
-    #7.0632 / magnification
+    #resolution = 7.0632 / magnification
     df_long = df.melt(id_vars=['Y'], var_name='X', value_name='Z')
     df_long['X'] = df_long['X'] * 0.001*resolution - 0.001*resolution
     
     max_x = df_long['X'].max()
     #df_long = df_long[df_long['X'] <= 0.75 * max_x]
     
-    end_time = 80
-    df_long = df_long[(df_long['Y'] >= 8) & (df_long['Y'] <= end_time)]
-    
-    # R code appears to be ignoring the hardcoded min_z and max_z values
-    #min_z, max_z = df_long['Z'].min(), df_long['Z'].max()
+    time_interval = 1  # hours per frame
+    df_long['Time_hr'] = df_long['Y'] * time_interval
+
+    pivoted = df_long.pivot(index="Time_hr", columns="X", values="Z")
+    #end_time = 120
+    #df_long = df_long[(df_long['Y'] >= 8) & (df_long['Y'] <= end_time)]
     
     plt.figure(figsize=(10, 8))
 
-    pivoted = df_long.pivot(index="Y", columns="X", values="Z")
-    mask = np.isnan(pivoted)
-    fig = sns.heatmap(pivoted, cmap=color_scheme, mask=mask, vmin=min_z, vmax=max_z, xticklabels=100)
+    #pivoted = df_long.pivot(index="Y", columns="X", values="Z")
+    #mask = np.isnan(pivoted)
+    mask = pivoted.isna() | (pivoted == 0) 
+    cmap = plt.get_cmap(color_scheme).copy()
+    cmap.set_bad(color='gray')
+
+    #fig = sns.heatmap(pivoted, cmap=cmap, mask=mask, vmin=min_z, vmax=max_z, xticklabels=100)
+    fig = sns.heatmap(pivoted, cmap=cmap, mask=mask, vmin=min_z, vmax=max_z, xticklabels=100, yticklabels=True)
 
     # Formatting
     ax = fig
@@ -183,7 +190,8 @@ def process_color_channel(idf, type, resolution=7.88955):
     ax.set_xticklabels(xrng)
     ax.tick_params(axis='x', labelsize=20)
 
-    yrng = np.arange(2,50, 10)
+    max_y = pivoted.index.max()
+    yrng = np.arange(2,max_y, 10)
     ax.set_yticks((yrng).astype(int))
     ax.set_yticklabels(yrng+8)
     ax.tick_params(axis='y', labelsize=20)
@@ -250,6 +258,62 @@ def merge_montages(dir_path):
 # Assuming these helpers exist:
 # from your_module import process_color_channel, create_montage, straighten_image
 
+def add_colored_scale_bar(bgr, color='red', width=40, height_ratio=0.3,
+                          min_val=0, max_val=45000, label=True):
+    """
+    Adds a vertical intensity scale bar in the same color as the image channel.
+    """
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 1.5
+    thickness = 2
+    max_label = str(int(max_val))
+    (label_width, _) = cv2.getTextSize("45000", font, font_scale, thickness)[0]
+
+    H, W, _ = bgr.shape
+    bar_height = int(H * height_ratio)
+    bar_top = int((H - bar_height) / 2)
+    bar_left = W - label_width
+    # Create vertical gradient (top = max, bottom = min)
+    gradient = np.linspace(255, 0, bar_height).astype(np.uint8).reshape(-1, 1)
+    bar = np.repeat(gradient, width, axis=1)
+
+    # Convert to BGR with appropriate channel coloring
+    bar_bgr = np.zeros((bar_height, width, 3), dtype=np.uint8)
+    if color == 'red':
+        bar_bgr[..., 2] = bar
+    elif color == 'green':
+        bar_bgr[..., 1] = bar
+    elif color == 'blue':
+        bar_bgr[..., 0] = bar
+    # elif color == 'cyan':
+    #     bar_bgr[..., 0] = bar  # blue
+    #     bar_bgr[..., 1] = bar  # green
+    # elif color == 'magenta':
+    #     bar_bgr[..., 0] = bar  # blue
+    #     bar_bgr[..., 2] = bar  # red
+    # elif color == 'yellow':
+    #     bar_bgr[..., 1] = bar  # green
+    #     bar_bgr[..., 2] = bar  # red
+    else:
+        # fallback to white grayscale
+        bar_bgr[...] = bar[:, :, None]
+
+    # Place scale bar in the image
+    bgr[bar_top:bar_top + bar_height, bar_left:bar_left + width] = bar_bgr
+
+    # Add min/max labels (optional)
+    if label:
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1.5
+        thickness = 2
+        color_text = (255, 255, 255)
+        cv2.putText(bgr, f'{int(max_val)}', (bar_left - 40, bar_top - 10),
+                    font, font_scale, color_text, thickness, cv2.LINE_AA)
+        cv2.putText(bgr, f'{int(min_val)}', (bar_left - 40, bar_top + bar_height),
+                    font, font_scale, color_text, thickness, cv2.LINE_AA)
+
+    return bgr
+
 def save_channel_avi_with_timestamp(image_stack, output_path, fps=5, color='gray', magnification=1.25):
             """
             Save a 3D image stack (T, Y, X) as an AVI with timestamp in hours.
@@ -294,12 +358,13 @@ def save_channel_avi_with_timestamp(image_stack, output_path, fps=5, color='gray
 
                     #bgr = cv2.cvtColor(colored, cv2.COLOR_RGB2BGR)
 
-                    time_in_hours = i * 1  # each frame is 4 hours apart
+                    time_in_hours = i * 1  # each frame is 1 hours apart
                     timestamp = f"Time: {time_in_hours:.2f} h"
 
-                    cv2.putText(bgr, timestamp, (10, H - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                                2, (255,255,255), 2, cv2.LINE_AA)
+                    cv2.putText(bgr, timestamp, (10, H - 20), cv2.FONT_HERSHEY_SIMPLEX,
+                                3, (255,255,255), 3, cv2.LINE_AA)
                     
+                    bgr = add_colored_scale_bar(bgr, color=color, min_val=0, max_val=45000) #add intensity scale bar
                     # Draw scale bar
                     scale_bar_width = 500.0 # in microns
                     X2 = W - 30
@@ -322,7 +387,7 @@ class WellProcessor:
     It handles the loading, registration, masking, and generation of intensity
     plots (kymographs) for TRITC and YFP channels.
     """
-    def __init__(self, well, path, time_clip=2, magnification=4.0):
+    def __init__(self, well, path, time_clip=2, magnification=1.25):
         """
         Initialize the processor with a given well ID and file path.
 
@@ -407,6 +472,14 @@ class WellProcessor:
         tritc_paths = glob.glob(os.path.join(self.path, f'{self.well}_*TRITC*.tif'))
         tritc_paths.sort()
         tritc_stack = np.array([io.imread(f) for f in tritc_paths])
+        
+        # Resize to match the first image in the stack
+        # target_shape = io.imread(tritc_paths[0]).shape
+        # tritc_stack = [resize(io.imread(f), target_shape, preserve_range=True).astype(np.uint16)
+        #                 for f in tritc_paths]
+        # self.tritc = np.stack(tritc_stack, axis=0)
+
+
         self.tritc = self.crop_and_subtract_background(tritc_stack)
 
         # Load YFP
@@ -415,18 +488,32 @@ class WellProcessor:
         yfp_stack = np.array([io.imread(f) for f in yfp_paths])
         self.yfp = self.crop_and_subtract_background(yfp_stack)
 
+        # target_shape = io.imread(yfp_paths[0]).shape
+        # yfp_stack = [resize(io.imread(f), target_shape, preserve_range=True).astype(np.uint16)
+        #                 for f in yfp_paths]
+        # self.yfp = np.stack(yfp_stack, axis=0)
+
+        #self.yfp = self.crop_and_subtract_background(yfp_stack)
+
+
     def register_images(self):
         """
-        Register YFP stack to itself using 'previous' reference, then
-        apply the same transform to TRITC.
+        Register TRITC stack to itself using 'previous' reference, then
+        apply the same transform to YFP.
         """
         sr = StackReg(StackReg.TRANSLATION)
-        self.yfp_registered = sr.register_transform_stack(
-            self.yfp,
+        # self.yfp_registered = sr.register_transform_stack(
+        #     self.yfp,
+        #     reference='previous',
+        #     verbose=True
+        # )
+        self.tritc_registered = sr.register_transform_stack(
+            self.tritc,
             reference='previous',
             verbose=True
         )
-        self.tritc_registered = sr.transform_stack(self.tritc)
+        #self.tritc_registered = sr.transform_stack(self.tritc)
+        self.yfp_registered = sr.transform_stack(self.yfp)
 
     def get_center_and_feret_slice(self, mask):
         """
@@ -504,7 +591,7 @@ class WellProcessor:
         self.masks = np.array(masks)
 
         # Force the first few slices to match slice 4
-        self.masks[0:4] = self.masks[4]
+        #self.masks[0:4] = self.masks[4]
 
         self.tritc_cleared = self.tritc_registered * self.masks
         self.yfp_cleared = self.yfp_registered * self.masks
@@ -610,7 +697,7 @@ class WellProcessor:
 
     def get_kymographs(self, display=False, viewer=None):
         """
-        Generate multiple kymographs along various angles plus a radial "shell" kymograph.
+        Generate multiple kymographs along various angles
         Optionally add shapes to a napari-like viewer for inspection.
         """
         lines = []
