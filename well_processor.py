@@ -28,7 +28,7 @@ from scipy import ndimage as ndi
 from pystackreg import StackReg
 from PIL import Image, ImageDraw, ImageFont
 from matplotlib import cm
-
+from funcs import create_montage, merge_montages, save_channel_avi_with_timestamp, straighten_image, process_color_channel
 
 
 class WellProcessor:
