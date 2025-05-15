@@ -265,7 +265,7 @@ def merge_montages(dir_path):
         draw.text(position, text, font=font, fill='black')
         img_list.append(img)
     #montaged = create_montage(img_list, int(len(img_list)/5), 5)
-    montaged = create_montage(img_list, math.ceil(len(img_list)/5), 5)
+    montaged = create_montage(img_list, math.ceil(len(img_list)/4), 4)
     montaged.save(dir_path + '/All.png')
 
 # Assuming these helpers exist:
