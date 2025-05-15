@@ -129,17 +129,26 @@ def straighten_image(image, path_points, width=50, napari_order=True, num_points
     vectors = np.stack([path_spline[0:-1,::-1], tangents[:,::-1]*100.0], axis=1)
     return straightened
 
-def process_color_channel(idf, type, resolution=7.88955):
+def process_color_channel(idf, type, resolution=7.88955, maxz=None, minz=None):
     df = idf.copy()
     if type == 'YFP':
         color_scheme = 'viridis'
         min_z, max_z = 0, 45000 #adjust as needed
+        if maxz is not None:
+            max_z = maxz
+            min_z = minz
     elif type == 'TRITC':
         color_scheme = 'Reds_r'
         min_z, max_z = 0, 45000 #adjust as needed
+        if maxz is not None:
+            max_z = maxz
+            min_z = minz
     elif type == 'Ratio':
         color_scheme = 'rocket'
         min_z, max_z = 0.0, 1 #adjust as needed
+        if maxz is not None:
+            max_z = maxz
+            min_z = minz
         df.iloc[:, 1:] = np.log10(df.iloc[:, 1:] + 1)
 
     elif type == 'YFP_Deriv':
@@ -422,7 +431,7 @@ def save_channel_avi_with_timestamp(image_stack, output_path, fps=5, color='gray
 
             video_writer.release()
 
-def make_montages(csv_dir, montage_dir, resolution):
+def make_montages(csv_dir, montage_dir, resolution, maxz=None, minz=None):
     csvs = glob.glob(csv_dir + '*_TRITC_*.csv')
     csvs.sort()
     for idx, csv in enumerate(csvs):
@@ -431,8 +440,15 @@ def make_montages(csv_dir, montage_dir, resolution):
         tritc_tdf = pd.read_csv(csv)
         ratio_tdf = pd.read_csv(csv.replace('_TRITC_', '_Ratio_'))
         # Montages
-        yfp_img   = process_color_channel(yfp_tdf, 'YFP', resolution=resolution)
-        tritc_img = process_color_channel(tritc_tdf, 'TRITC', resolution=resolution)
-        ratio_img = process_color_channel(ratio_tdf, 'Ratio', resolution=resolution)
+        if maxz is not None:
+            ymaxz = maxz[0]
+            yminz = minz[0]
+            tmaxz = maxz[1]
+            tminz = minz[1]
+            rmaxz = maxz[2]
+            rminz = minz[2]
+        yfp_img   = process_color_channel(yfp_tdf, 'YFP', resolution=resolution, maxz=maxz, minz=minz)
+        tritc_img = process_color_channel(tritc_tdf, 'TRITC', resolution=resolution, maxz=maxz, minz=minz)
+        ratio_img = process_color_channel(ratio_tdf, 'Ratio', resolution=resolution, maxz=maxz, minz=minz)
         montage   = create_montage([tritc_img, yfp_img, ratio_img], 1, 3)
         montage.save(os.path.join(montage_dir, f'{well}_{idx}.png'))
