@@ -151,15 +151,6 @@ def process_color_channel(idf, type, resolution=7.88955, maxz=None, minz=None):
             min_z = minz
         df.iloc[:, 1:] = np.log10(df.iloc[:, 1:] + 1)
 
-    elif type == 'YFP_Deriv':
-        color_scheme = 'viridis'
-        min_z, max_z = 0, 45000 #adjust as needed
-    elif type == 'TRITC_Deriv':
-        color_scheme = 'Reds_r'
-        min_z, max_z = 0, 45000 #adjust as needed
-    elif type == 'Ratio_Deriv':
-        color_scheme = 'rocket'
-        min_z, max_z = -1, 1 #adjust as needed
     else:
         raise ValueError(f"Unrecognized channel type: {type}")
     
@@ -274,40 +265,10 @@ def merge_montages(dir_path):
         draw.text(position, text, font=font, fill='black')
         img_list.append(img)
     #montaged = create_montage(img_list, int(len(img_list)/5), 5)
+    print(len(img_list))
     montaged = create_montage(img_list, math.ceil(len(img_list)/4), 4)
     montaged.save(dir_path + '/All.png')
 
-# Assuming these helpers exist:
-# from your_module import process_color_channel, create_montage, straighten_image
-def merge_derivative_montages(dir_path):
-    """
-    Merge derivative kymograph PNGs (e.g., B4_DerivMontage_0.png) into a labeled All_DerivMontages.png.
-    """
-    montage_paths = glob.glob(os.path.join(dir_path, '*_DerivMontage_*.png'))
-    montage_paths.sort()
-    img_list = []
-    for path in montage_paths:
-        filename = os.path.basename(path).replace('.png', '')
-        parts = filename.split('_')  # e.g., ['B4', 'DerivMontage', '0']
-        if len(parts) < 3:
-            continue
-        well, angle = parts[0], parts[-1]
-
-        img = Image.open(path)
-        draw = ImageDraw.Draw(img)
-        try:
-            font = ImageFont.truetype("arial", 50)
-        except:
-            font = ImageFont.load_default()
-        draw.text((10, 10), f"{well}_Δ_Angle{angle}", fill='black', font=font)
-        img_list.append(img)
-
-    if img_list:
-        montage = create_montage(img_list, math.ceil(len(img_list) / 5), 5)
-        montage.save(os.path.join(dir_path, 'All_DerivMontages.png'))
-        print("Saved All_DerivMontages.png")
-    else:
-        print("No derivative montages found to merge.")
 
 def add_colored_scale_bar(bgr, color='red', width=40, height_ratio=0.3,
                           min_val=0, max_val=45000, label=True, channel_type=None):
@@ -431,7 +392,7 @@ def save_channel_avi_with_timestamp(image_stack, output_path, fps=5, color='gray
 
             video_writer.release()
 
-def make_montages(csv_dir, montage_dir, resolution, maxz=None, minz=None):
+def make_montages(csv_dir, montage_dir, resolution, maxz=[45000,45000,1], minz=[0,0,0]):
     csvs = glob.glob(csv_dir + '*_TRITC_*.csv')
     csvs.sort()
     for idx, csv in enumerate(csvs):
@@ -440,15 +401,8 @@ def make_montages(csv_dir, montage_dir, resolution, maxz=None, minz=None):
         tritc_tdf = pd.read_csv(csv)
         ratio_tdf = pd.read_csv(csv.replace('_TRITC_', '_Ratio_'))
         # Montages
-        if maxz is not None:
-            ymaxz = maxz[0]
-            yminz = minz[0]
-            tmaxz = maxz[1]
-            tminz = minz[1]
-            rmaxz = maxz[2]
-            rminz = minz[2]
-        yfp_img   = process_color_channel(yfp_tdf, 'YFP', resolution=resolution, maxz=maxz, minz=minz)
-        tritc_img = process_color_channel(tritc_tdf, 'TRITC', resolution=resolution, maxz=maxz, minz=minz)
-        ratio_img = process_color_channel(ratio_tdf, 'Ratio', resolution=resolution, maxz=maxz, minz=minz)
+        yfp_img   = process_color_channel(yfp_tdf, 'YFP', resolution=resolution, maxz=maxz[0], minz=minz[0])
+        tritc_img = process_color_channel(tritc_tdf, 'TRITC', resolution=resolution, maxz=maxz[1], minz=minz[1])
+        ratio_img = process_color_channel(ratio_tdf, 'Ratio', resolution=resolution, maxz=maxz[2], minz=minz[2])
         montage   = create_montage([tritc_img, yfp_img, ratio_img], 1, 3)
         montage.save(os.path.join(montage_dir, f'{well}_{idx}.png'))
