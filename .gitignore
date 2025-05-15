@@ -1,4 +1,4 @@
 /.ipynb_checkpoints
-/__pycache__
+__pycache__/
 __pycache__/well_processor.cpython-310.pyc
 __pycache__/well_processor.cpython-312.pyc

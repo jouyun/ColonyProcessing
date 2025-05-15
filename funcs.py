@@ -356,68 +356,6 @@ def add_colored_scale_bar(bgr, color='red', width=40, height_ratio=0.3,
 
     return bgr
 
-def make_derivative_kymograph_montages_from_csv(well, csv_dir, output_dir, resolution=7.0632 / 1.25):
-    """
-    Creates 1×3 TIFF montages for each angle using TRITC_Deriv, YFP_Deriv, and Ratio_Deriv CSVs.
-    """
-    channel_names = ['TRITC_Deriv', 'YFP_Deriv', 'Ratio_Deriv']
-    for idx in range(4):  # Four angles
-        images = []
-
-        for ch in channel_names:
-            path = os.path.join(csv_dir, f"{well}_{ch}_{idx}.csv")
-            if not os.path.exists(path):
-                print(f"Missing: {path}")
-                continue
-            df = pd.read_csv(path)
-            df_long = df.melt(id_vars=['x'], var_name='Y', value_name='Z')
-            df_long['Y'] = pd.to_numeric(df_long['Y'], errors='coerce')
-            df_long['Time_hr'] = df_long['Y']
-            pivoted = df_long.pivot(index="Time_hr", columns="x", values="Z")
-            mask = pivoted.isna() | (pivoted == 0)
-
-            if ch == 'TRITC_Deriv':
-                cmap = plt.get_cmap('Reds_r').copy()
-                vmin, vmax = -10000, 10000
-            elif ch == 'YFP_Deriv':
-                cmap = plt.get_cmap('viridis').copy()
-                vmin, vmax = -10000, 10000
-            elif ch == 'Ratio_Deriv':
-                cmap = plt.get_cmap('seismic').copy()
-                vmin, vmax = -1.0, 1.0
-            else:
-                cmap = plt.get_cmap('gray').copy()
-                vmin, vmax = None, None
-
-            cmap.set_bad(color='gray')
-
-            fig = sns.heatmap(pivoted, cmap=cmap, mask=mask, center=0, vmin=vmin, vmax=vmax, cbar=True)
-
-            ax = fig
-            ax.invert_yaxis()
-            ax.set_title(ch.replace("_Deriv", ""), fontsize=20)
-            ax.axis('off')
-
-            fig = ax.get_figure()
-            fig.canvas.draw()
-            w, h = fig.canvas.get_width_height()
-            buf = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8).reshape(h, w, 4)
-            images.append(Image.fromarray(buf[..., :3]))
-            plt.close(fig)
-        if len(images) == 3:
-            montage = create_montage(images, 1, 3)
-            draw = ImageDraw.Draw(montage)
-            try:
-                font = ImageFont.truetype("arial", 50)
-            except:
-                font = ImageFont.load_default()
-
-            draw.text((10, 10), f"{well}_Angle{idx}", font=font, fill='black')
-            out_path = os.path.join(output_dir, f"{well}_DerivMontage_{idx}.png")
-            montage.save(out_path)
-            print(f"✅ Saved: {out_path}")
-
-
 def save_channel_avi_with_timestamp(image_stack, output_path, fps=5, color='gray', magnification=1.25):
             """
             Save a 3D image stack (T, Y, X) as an AVI with timestamp in hours.
@@ -483,3 +421,18 @@ def save_channel_avi_with_timestamp(image_stack, output_path, fps=5, color='gray
                     video_writer.write(bgr)
 
             video_writer.release()
+
+def make_montages(csv_dir, montage_dir, resolution):
+    csvs = glob.glob(csv_dir + '*_TRITC_*.csv')
+    csvs.sort()
+    for idx, csv in enumerate(csvs):
+        well = csv.split('\\')[-1].split('_')[0]
+        yfp_tdf = pd.read_csv(csv.replace('_TRITC_', '_YFP_'))
+        tritc_tdf = pd.read_csv(csv)
+        ratio_tdf = pd.read_csv(csv.replace('_TRITC_', '_Ratio_'))
+        # Montages
+        yfp_img   = process_color_channel(yfp_tdf, 'YFP', resolution=resolution)
+        tritc_img = process_color_channel(tritc_tdf, 'TRITC', resolution=resolution)
+        ratio_img = process_color_channel(ratio_tdf, 'Ratio', resolution=resolution)
+        montage   = create_montage([tritc_img, yfp_img, ratio_img], 1, 3)
+        montage.save(os.path.join(montage_dir, f'{well}_{idx}.png'))
