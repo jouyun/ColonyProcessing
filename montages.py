@@ -36,40 +36,30 @@ def process_color_channel(idf, type, resolution=7.88955, max_z=None, min_z=None,
     if ratio:
         df.iloc[:, 1:] = np.log10(df.iloc[:, 1:] + 1)
     
-    df = df.transpose().reset_index()
-    df.columns = ['Y'] + list(df.columns[1:])
+    df = df.set_index('x').T.reset_index()
+    df.columns = ['T'] + list(np.arange(len(df.columns[1:])))
     df = df.apply(pd.to_numeric, errors='coerce')
     
-    # Save the read in data to an Excel file in the 'Data read in' directory
-    #df.to_excel(os.path.join(data_dir, os.path.basename(file_path) + ".xlsx"), index=False)
-    
-    if not pd.api.types.is_numeric_dtype(df['Y']):
+    if not pd.api.types.is_numeric_dtype(df['T']):
         raise Exception("'Y' column is not numeric.")
     
-    #print(df['x'].max())
-    #resolution = 7.0632 / magnification
-    df_long = df.melt(id_vars=['Y'], var_name='X', value_name='Z')
+    df_long = df.melt(id_vars=['T'], var_name='X', value_name='Z')
     df_long['X'] = df_long['X'] * 0.001*resolution - 0.001*resolution
     
     max_x = df_long['X'].max()
-    #df_long = df_long[df_long['X'] <= 0.75 * max_x]
     
     time_interval = 1.16667  # hours per frame
-    df_long['Time_hr'] = df_long['Y'] * time_interval
+    df_long['Time_hr'] = df_long['T'] * time_interval
 
     pivoted = df_long.pivot(index="Time_hr", columns="X", values="Z")
-    #end_time = 120
-    #df_long = df_long[(df_long['Y'] >= 8) & (df_long['Y'] <= end_time)]
-    
+
     plt.figure(figsize=(10, 8))
 
-    #pivoted = df_long.pivot(index="Y", columns="X", values="Z")
-    #mask = np.isnan(pivoted)
+
     mask = pivoted.isna() | (pivoted == 0) 
     cmap = plt.get_cmap(color_scheme).copy()
     cmap.set_bad(color='gray')
 
-    #fig = sns.heatmap(pivoted, cmap=cmap, mask=mask, vmin=min_z, vmax=max_z, xticklabels=100)
     fig = sns.heatmap(pivoted, cmap=cmap, mask=mask, vmin=min_z, vmax=max_z, xticklabels=100, yticklabels=True)
 
     # Formatting
@@ -78,7 +68,6 @@ def process_color_channel(idf, type, resolution=7.88955, max_z=None, min_z=None,
     ax.set_xlabel("Radius (mm)", fontsize=30)
     ax.set_ylabel("Time (h)", fontsize=30)
 
-    #xrng = (np.arange(0,4,1))
     max_rng = np.floor(max_x).astype(int) + 1
     xrng = (np.arange(0,max_rng,1))
     ax.set_xticks((xrng * 1/(0.001*resolution)).astype(int))
@@ -91,7 +80,7 @@ def process_color_channel(idf, type, resolution=7.88955, max_z=None, min_z=None,
     ax.set_yticklabels(yrng+8)
     ax.tick_params(axis='y', labelsize=20)
 
-    ax.set_title(f"{type} Intensity", fontsize=30)
+    ax.set_title(f"{type}", fontsize=30)
 
     fig = ax.get_figure()
     fig.canvas.draw()
@@ -151,7 +140,13 @@ def merge_montages(dir_path):
     montaged = create_montage(img_list, math.ceil(len(img_list)/4), 4)
     montaged.save(dir_path + '/All.png')
 
-def make_montages(csv_dir, montage_dir, resolution, maxz=[45000,45000,1], minz=[0,0,0]):
+def get_diff_df(df):
+    diff_df = df.iloc[:,1:].diff(axis=1)
+    diff_df.columns = df.columns[0:-1]
+    diff_df['x'] = df['x']
+    return diff_df
+
+def make_montages(csv_dir, montage_dir, resolution, maxz=[45000,45000,1], minz=[0,0,0], dmaxz=[15000,15000,2], dminz=[0,0,0]):
     csvs = glob.glob(csv_dir + '*_TRITC_*.csv')
     csvs.sort()
     for idx, csv in enumerate(csvs):
@@ -159,9 +154,21 @@ def make_montages(csv_dir, montage_dir, resolution, maxz=[45000,45000,1], minz=[
         yfp_tdf = pd.read_csv(csv.replace('_TRITC_', '_YFP_'))
         tritc_tdf = pd.read_csv(csv)
         ratio_tdf = pd.read_csv(csv.replace('_TRITC_', '_Ratio_'))
-        # Montages
-        yfp_img   = process_color_channel(yfp_tdf, 'YFP', resolution=resolution, max_z=maxz[0], min_z=minz[0], color_scheme='viridis')
-        tritc_img = process_color_channel(tritc_tdf, 'TRITC', resolution=resolution, max_z=maxz[1], min_z=minz[1], color_scheme='Reds_r')
-        ratio_img = process_color_channel(ratio_tdf, 'Ratio', resolution=resolution, max_z=maxz[2], min_z=minz[2], color_scheme='rocket', ratio=True)
+
+        # Standard montage
+        tritc_img = process_color_channel(tritc_tdf, 'TRITC Intensity', resolution=resolution, max_z=maxz[0], min_z=minz[0], color_scheme='Reds_r')
+        yfp_img   = process_color_channel(yfp_tdf, 'YFP Intensity', resolution=resolution, max_z=maxz[1], min_z=minz[1], color_scheme='viridis')
+        ratio_img = process_color_channel(ratio_tdf, 'Ratio Intensity', resolution=resolution, max_z=maxz[2], min_z=minz[2], color_scheme='rocket', ratio=True)
         montage   = create_montage([tritc_img, yfp_img, ratio_img], 1, 3)
         montage.save(os.path.join(montage_dir, f'{well}_{idx}.png'))
+
+        # Difference montage
+        diff_yfp_df = get_diff_df(yfp_tdf)
+        diff_tritc_df = get_diff_df(tritc_tdf)
+        diff_ratio_df = get_diff_df(ratio_tdf)
+        tritc_img = process_color_channel(diff_tritc_df, 'TRITC Derviative', resolution=resolution, max_z=dmaxz[0], min_z=dminz[0], color_scheme='Reds_r')
+        yfp_img   = process_color_channel(diff_yfp_df, 'YFP Derviative', resolution=resolution, max_z=dmaxz[1], min_z=dminz[1], color_scheme='viridis')
+        ratio_img = process_color_channel(diff_ratio_df, 'Ratio Derviative', resolution=resolution, max_z=dmaxz[2], min_z=dminz[2], color_scheme='rocket', ratio=False)
+        montage   = create_montage([tritc_img, yfp_img, ratio_img], 1, 3)
+        montage.save(os.path.join(montage_dir, f'{well}_{idx}_diff.png'))
+
