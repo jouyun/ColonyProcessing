@@ -166,9 +166,9 @@ def make_montages(csv_dir, montage_dir, resolution, maxz=[45000,45000,1], minz=[
         diff_yfp_df = get_diff_df(yfp_tdf)
         diff_tritc_df = get_diff_df(tritc_tdf)
         diff_ratio_df = get_diff_df(ratio_tdf)
-        tritc_img = process_color_channel(diff_tritc_df, 'TRITC Derviative', resolution=resolution, max_z=dmaxz[0], min_z=dminz[0], color_scheme='Reds_r')
-        yfp_img   = process_color_channel(diff_yfp_df, 'YFP Derviative', resolution=resolution, max_z=dmaxz[1], min_z=dminz[1], color_scheme='viridis')
-        ratio_img = process_color_channel(diff_ratio_df, 'Ratio Derviative', resolution=resolution, max_z=dmaxz[2], min_z=dminz[2], color_scheme='rocket', ratio=False)
+        tritc_img = process_color_channel(diff_tritc_df, 'TRITC Derivative', resolution=resolution, max_z=dmaxz[0], min_z=dminz[0], color_scheme='Reds_r')
+        yfp_img   = process_color_channel(diff_yfp_df, 'YFP Derivative', resolution=resolution, max_z=dmaxz[1], min_z=dminz[1], color_scheme='viridis')
+        ratio_img = process_color_channel(diff_ratio_df, 'Ratio Derivative', resolution=resolution, max_z=dmaxz[2], min_z=dminz[2], color_scheme='rocket', ratio=False)
         montage   = create_montage([tritc_img, yfp_img, ratio_img], 1, 3)
         montage.save(os.path.join(montage_dir, f'{well}_{idx}_diff.png'))
 
