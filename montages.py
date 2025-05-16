@@ -76,7 +76,7 @@ def process_color_channel(idf, type, resolution=7.88955, max_z=None, min_z=None,
 
     max_y = pivoted.index.max()
     yrng = np.arange(2,max_y, 10)
-    ax.set_yticks((yrng).astype(int))
+    ax.set_yticks((yrng * 1/time_interval).astype(int))
     ax.set_yticklabels(yrng+8)
     ax.tick_params(axis='y', labelsize=20)
 
