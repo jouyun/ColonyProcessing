@@ -28,7 +28,7 @@ from scipy import ndimage as ndi
 from pystackreg import StackReg
 from PIL import Image, ImageDraw, ImageFont
 from matplotlib import cm
-from funcs import create_montage, merge_montages, save_channel_avi_with_timestamp, straighten_image, process_color_channel
+from helper import save_channel_avi_with_timestamp, straighten_image
 
 
 class WellProcessor:
@@ -599,7 +599,7 @@ class WellProcessor:
         # Debug / check the final projection directory
         print(self.projection_dir)
 
-        # Save CSVs and montages for each set of kymographs
+        # Save CSVs and for each set of kymographs
         for idx, (tritc_tdf, yfp_tdf, ratio_tdf) in enumerate(
             zip(self.tritc_tdfs, self.yfp_tdfs, self.ratio_tdfs)
         ):
