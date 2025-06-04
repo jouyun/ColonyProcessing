@@ -168,16 +168,16 @@ class WellProcessor:
         """
         sr = StackReg(StackReg.TRANSLATION)
         # self.yfp_registered = sr.register_transform_stack(
-        #     self.yfp,
-        #     reference='previous',
-        #     verbose=True
+        #      self.yfp,
+        #      reference='previous',
+        #      verbose=True
         # )
         self.tritc_registered = sr.register_transform_stack(
             self.tritc,
             reference='previous',
             verbose=True
         )
-        #self.tritc_registered = sr.transform_stack(self.tritc)
+        # self.tritc_registered = sr.transform_stack(self.tritc)
         self.yfp_registered = sr.transform_stack(self.yfp)
 
     def get_center_and_feret_slice(self, mask):
@@ -298,7 +298,7 @@ class WellProcessor:
             self.yfp_cleared,  # shape (T, Y, X)
             os.path.join(self.cleared_dir, f'{self.well}_YFP.avi'),
             fps=5,
-            color='green',
+            color='cyan',
             magnification= self.magnification
         )
 

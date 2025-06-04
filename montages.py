@@ -48,7 +48,7 @@ def process_color_channel(idf, type, resolution=7.88955, max_z=None, min_z=None,
     
     max_x = df_long['X'].max()
     
-    time_interval = 1.16667  # hours per frame
+    time_interval = 1  # hours per frame
     df_long['Time_hr'] = df_long['T'] * time_interval
 
     pivoted = df_long.pivot(index="Time_hr", columns="X", values="Z")

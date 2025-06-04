@@ -143,7 +143,7 @@ def add_colored_scale_bar(bgr, color='red', width=40, height_ratio=0.3,
         min_val = -10000
         max_val = 10000
     elif channel_type == 'YFP_Deriv' and min_val == 0 and max_val == 45000:
-        color = 'green'
+        color = 'cyan'
         min_val = -10000
         max_val = 10000
     elif channel_type == 'Ratio_Deriv' and min_val == 0 and max_val == 45000:
@@ -152,15 +152,15 @@ def add_colored_scale_bar(bgr, color='red', width=40, height_ratio=0.3,
         max_val = 1.0
 
     font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 1.5
+    font_scale = 3
     thickness = 2
     max_label = str(int(max_val))
     (label_width, _) = cv2.getTextSize(max_label, font, font_scale, thickness)[0]
 
     H, W, _ = bgr.shape
     bar_height = int(H * height_ratio)
-    bar_top = int((H - bar_height) / 2)
-    bar_left = W - label_width
+    bar_top = 200
+    bar_left = 200
 
     gradient = np.linspace(255, 0, bar_height).astype(np.uint8).reshape(-1, 1)
     bar = np.repeat(gradient, width, axis=1)
@@ -168,10 +168,11 @@ def add_colored_scale_bar(bgr, color='red', width=40, height_ratio=0.3,
     bar_bgr = np.zeros((bar_height, width, 3), dtype=np.uint8)
     if color == 'red':
         bar_bgr[..., 2] = bar
-    elif color == 'green':
+    elif color == 'cyan':
         bar_bgr[..., 1] = bar
+        bar_bgr[...,0] = bar
     elif color == 'blue':
-        bar_bgr[..., 0] = bar
+        bar_bgr[...,0] = bar
     else:
         bar_bgr[...] = bar[:, :, None]
 
@@ -179,9 +180,15 @@ def add_colored_scale_bar(bgr, color='red', width=40, height_ratio=0.3,
 
     if label:
         color_text = (255, 255, 255)
-        cv2.putText(bgr, f'{int(max_val)}', (bar_left - 40, bar_top - 10),
+
+        # Max label just above the bar
+        cv2.putText(bgr, f'{int(max_val)}',
+                    (bar_left, bar_top - 10),
                     font, font_scale, color_text, thickness, cv2.LINE_AA)
-        cv2.putText(bgr, f'{int(min_val)}', (bar_left - 40, bar_top + bar_height),
+
+        # Min label just below the bar
+        cv2.putText(bgr, f'{int(min_val)}',
+                    (bar_left, bar_top + bar_height + 40),
                     font, font_scale, color_text, thickness, cv2.LINE_AA)
 
     return bgr
@@ -215,10 +222,11 @@ def save_channel_avi_with_timestamp(image_stack, output_path, fps=5, color='gray
 
                         if color == 'red':
                             bgr[..., 2] = gray_uint8  # Red channel
-                        elif color == 'green':
+                        elif color == 'cyan':
                             bgr[..., 1] = gray_uint8  # Green channel
-                        elif color == 'blue':
                             bgr[..., 0] = gray_uint8  # Blue channel
+                        elif color == 'blue':
+                            bgr[..., 0] = gray_uint8 # Red channel
                         else:
                             # Default to grayscale
                             bgr = cv2.cvtColor(gray_uint8, cv2.COLOR_GRAY2BGR)
@@ -232,9 +240,20 @@ def save_channel_avi_with_timestamp(image_stack, output_path, fps=5, color='gray
 
                     time_in_hours = i * 1  # each frame is 1 hours apart
                     timestamp = f"Time: {time_in_hours:.2f} h"
+                    (text_width, _), _ = cv2.getTextSize(timestamp, cv2.FONT_HERSHEY_SIMPLEX, 3, 3)  #To change the loaction of timestamp
+                    # Assign timestamp text color based on channel
+                    if color == 'red':
+                        timestamp_color = (0, 0, 255)  # Red
+                    elif color == 'cyan':
+                        timestamp_color = (255, 255, 0)  # Cyan
+                    elif color == 'blue':
+                        timestamp_color = (255, 0, 0)  # Blue
+                    else:
+                        timestamp_color = (255, 255, 255)  # Default: white
 
-                    cv2.putText(bgr, timestamp, (10, H - 20), cv2.FONT_HERSHEY_SIMPLEX,
-                                3, (255,255,255), 3, cv2.LINE_AA)
+                    # Draw the timestamp
+                    cv2.putText(bgr, timestamp, (W - text_width - 100, H - 100),
+                                cv2.FONT_HERSHEY_SIMPLEX, 3, timestamp_color, 3, cv2.LINE_AA)
                     
                     bgr = add_colored_scale_bar(bgr, color=color, min_val=0, max_val=45000) #add intensity scale bar
                     # Draw scale bar
@@ -246,7 +265,32 @@ def save_channel_avi_with_timestamp(image_stack, output_path, fps=5, color='gray
                     rect_width = 30
                     cv2.rectangle(bgr, (X1, Y1 - rect_width // 2), (X2, Y2 + rect_width // 2), (255, 255, 255), -1)
 
+                    if color == 'cyan':
+                        font = cv2.FONT_HERSHEY_SIMPLEX
+                        font_scale = 4
+                        thickness = 3
+                        sytox_text = "SytoX"
+                        (text_width, _), _ = cv2.getTextSize(sytox_text, font, font_scale, thickness)
+                        cv2.putText(bgr, sytox_text, (W - text_width - 400, 400),
+                                    font, font_scale, (255, 255, 0), thickness, cv2.LINE_AA)
 
+                    if color == 'red':
+                        font = cv2.FONT_HERSHEY_SIMPLEX
+                        font_scale = 4
+                        thickness = 3
+                        TRITC_text = "mKO"
+                        (text_width, _), _ = cv2.getTextSize(TRITC_text, font, font_scale, thickness)
+                        cv2.putText(bgr, TRITC_text, (W - text_width - 400, 400),
+                                    font, font_scale, (0, 0, 255), thickness, cv2.LINE_AA)
+                    
+                    if color == 'blue':
+                        font = cv2.FONT_HERSHEY_SIMPLEX
+                        font_scale = 4
+                        thickness = 3
+                        Ratio_text = "Ratio"
+                        (text_width, _), _ = cv2.getTextSize(Ratio_text, font, font_scale, thickness)
+                        cv2.putText(bgr, Ratio_text, (W - text_width - 400, 400),
+                                    font, font_scale, (255, 0, 0), thickness, cv2.LINE_AA)
 
                     video_writer.write(bgr)
 
