@@ -37,7 +37,7 @@ class WellProcessor:
     It handles the loading, registration, masking, and generation of intensity
     plots (kymographs) for TRITC and YFP channels.
     """
-    def __init__(self, well, path, time_clip=2, magnification=1.25):
+    def __init__(self, well, path, time_clip=2, magnification=1.25, time_resolution=1.25, first_frame_time_hr=4):
         """
         Initialize the processor with a given well ID and file path.
 
@@ -66,6 +66,8 @@ class WellProcessor:
         self.yfp_cleared = None
         self.output_img = None
         self.derivative_stack = None
+        self.time_resolution = time_resolution  # in hours
+        self.start_time_offset = first_frame_time_hr + time_clip * time_resolution  # Offset for time in csvs/kymographs
 
         # Kymographs
         self.tritc_kymographs = []
@@ -421,11 +423,11 @@ class WellProcessor:
 
             tritc_tdf = pd.DataFrame(
                 data=tritc_kymo_.T, 
-                columns=6 + np.arange(tritc_kymo_.shape[0])
+                columns=self.start_time_offset + self.time_resolution * np.arange(tritc_kymo_.shape[0])
             )
             yfp_tdf = pd.DataFrame(
                 data=yfp_kymo_.T, 
-                columns=6 + np.arange(yfp_kymo_.shape[0])
+                columns=self.start_time_offset + self.time_resolution * np.arange(yfp_kymo_.shape[0])
             )
 
             # Insert distance column

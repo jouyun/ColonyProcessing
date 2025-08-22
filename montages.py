@@ -48,8 +48,8 @@ def process_color_channel(idf, type, resolution=7.88955, max_z=None, min_z=None,
     
     max_x = df_long['X'].max()
     
-    time_interval = 1  # hours per frame
-    df_long['Time_hr'] = df_long['T'] * time_interval
+    df_long['Time_hr'] = df_long['T']
+    time_interval = df_long['Time_hr'].iloc[1] - df_long['Time_hr'].iloc[0]
 
     pivoted = df_long.pivot(index="Time_hr", columns="X", values="Z")
 
@@ -75,9 +75,12 @@ def process_color_channel(idf, type, resolution=7.88955, max_z=None, min_z=None,
     ax.tick_params(axis='x', labelsize=20)
 
     max_y = pivoted.index.max()
-    yrng = np.arange(2,max_y, 10)
-    ax.set_yticks((yrng * 1/time_interval).astype(int))
-    ax.set_yticklabels(yrng+8)
+    yrng = np.arange(10,max_y, 10)
+    spacing = pivoted.index[1] - pivoted.index[0]
+    ideal_tick_labels = np.arange(pivoted.index[0]//10*10+10, pivoted.index[-1]//10*10+10, 10)
+    ticks = (ideal_tick_labels - pivoted.index[0]) / spacing
+    ax.set_yticks(ticks)
+    ax.set_yticklabels(ideal_tick_labels)
     ax.tick_params(axis='y', labelsize=20)
 
     ax.set_title(f"{type}", fontsize=30)
@@ -137,7 +140,7 @@ def merge_montages(dir_path):
         img_list.append(img)
     #montaged = create_montage(img_list, int(len(img_list)/5), 5)
     print(len(img_list))
-    montaged = create_montage(img_list, math.ceil(len(img_list)/4), 4)
+    montaged = create_montage(img_list, math.ceil(len(img_list)/8), 8)
     montaged.save(dir_path + '/All.png')
 
 def get_diff_df(df):
@@ -146,29 +149,30 @@ def get_diff_df(df):
     diff_df['x'] = df['x']
     return diff_df
 
-def make_montages(csv_dir, montage_dir, resolution, maxz=[45000,45000,1], minz=[0,0,0], dmaxz=[15000,15000,2], dminz=[0,0,0]):
+def make_montages(csv_dir, montage_dir, resolution, maxz=[45000,45000,1], minz=[0,0,0], dmaxz=[15000,15000,2], dminz=[0,0,0], time_resolution=1.25):
     csvs = glob.glob(csv_dir + '*_TRITC_*.csv')
     csvs.sort()
     for idx, csv in enumerate(csvs):
         well = csv.split('\\')[-1].split('_')[0]
+        out_idx = csv.split('\\')[-1].split('_')[-1].split('.')[0]
         yfp_tdf = pd.read_csv(csv.replace('_TRITC_', '_YFP_'))
         tritc_tdf = pd.read_csv(csv)
         ratio_tdf = pd.read_csv(csv.replace('_TRITC_', '_Ratio_'))
 
         # Standard montage
-        tritc_img = process_color_channel(tritc_tdf, 'TRITC Intensity', resolution=resolution, max_z=maxz[0], min_z=minz[0], color_scheme='Reds_r')
-        yfp_img   = process_color_channel(yfp_tdf, 'YFP Intensity', resolution=resolution, max_z=maxz[1], min_z=minz[1], color_scheme='viridis')
-        ratio_img = process_color_channel(ratio_tdf, 'Ratio Intensity', resolution=resolution, max_z=maxz[2], min_z=minz[2], color_scheme='rocket', ratio=True)
+        tritc_img = process_color_channel(tritc_tdf, 'TRITC Intensity', resolution=resolution, max_z=maxz[0], min_z=minz[0], color_scheme='Reds_r', )
+        yfp_img   = process_color_channel(yfp_tdf, 'YFP Intensity', resolution=resolution, max_z=maxz[1], min_z=minz[1], color_scheme='viridis', )
+        ratio_img = process_color_channel(ratio_tdf, 'Ratio Intensity', resolution=resolution, max_z=maxz[2], min_z=minz[2], color_scheme='rocket', ratio=True, )
         montage   = create_montage([tritc_img, yfp_img, ratio_img], 1, 3)
-        montage.save(os.path.join(montage_dir, f'{well}_{idx}.png'))
+        montage.save(os.path.join(montage_dir, f'{well}_{out_idx}.png'))
 
         # Difference montage
         diff_yfp_df = get_diff_df(yfp_tdf)
         diff_tritc_df = get_diff_df(tritc_tdf)
         diff_ratio_df = get_diff_df(ratio_tdf)
-        tritc_img = process_color_channel(diff_tritc_df, 'TRITC Derivative', resolution=resolution, max_z=dmaxz[0], min_z=dminz[0], color_scheme='Reds_r')
-        yfp_img   = process_color_channel(diff_yfp_df, 'YFP Derivative', resolution=resolution, max_z=dmaxz[1], min_z=dminz[1], color_scheme='viridis')
-        ratio_img = process_color_channel(diff_ratio_df, 'Ratio Derivative', resolution=resolution, max_z=dmaxz[2], min_z=dminz[2], color_scheme='rocket', ratio=False)
+        tritc_img = process_color_channel(diff_tritc_df, 'TRITC Derivative', resolution=resolution, max_z=dmaxz[0], min_z=dminz[0], color_scheme='Reds_r', )
+        yfp_img   = process_color_channel(diff_yfp_df, 'YFP Derivative', resolution=resolution, max_z=dmaxz[1], min_z=dminz[1], color_scheme='viridis', )
+        ratio_img = process_color_channel(diff_ratio_df, 'Ratio Derivative', resolution=resolution, max_z=dmaxz[2], min_z=dminz[2], color_scheme='rocket', ratio=False, )
         montage   = create_montage([tritc_img, yfp_img, ratio_img], 1, 3)
-        montage.save(os.path.join(montage_dir, f'{well}_{idx}_diff.png'))
+        montage.save(os.path.join(montage_dir, f'{well}_{out_idx}_diff.png'))
 

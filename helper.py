@@ -238,7 +238,7 @@ def save_channel_avi_with_timestamp(image_stack, output_path, fps=5, color='gray
 
                     #bgr = cv2.cvtColor(colored, cv2.COLOR_RGB2BGR)
 
-                    time_in_hours = i * 1  # each frame is 1 hours apart
+                    time_in_hours = i * 1.50  # each frame is 1 hours apart
                     timestamp = f"Time: {time_in_hours:.2f} h"
                     (text_width, _), _ = cv2.getTextSize(timestamp, cv2.FONT_HERSHEY_SIMPLEX, 3, 3)  #To change the loaction of timestamp
                     # Assign timestamp text color based on channel
